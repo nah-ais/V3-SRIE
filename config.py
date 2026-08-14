@@ -112,7 +112,7 @@ DUPLICATE_THRESHOLD = 95.0  # >= nilai ini => "Potensi Double Count"
 # CATATAN KEAMANAN: menyimpan token langsung di source code hanya disarankan
 # untuk penggunaan lokal/internal. Untuk deployment (Streamlit Cloud, dsb),
 # gunakan st.secrets atau environment variable, JANGAN commit token ke repo publik.
-KOBO_TOKEN = "MY_TOKEN"  # ganti dengan token API pribadi Anda
+KOBO_TOKEN = "c710cac4d6d5fafbda973f04b30a2c27bda914c4"  # ganti dengan token API pribadi Anda
 
 KOBO_ENDPOINT = "https://kf.kobotoolbox.org/api/v2"
 KOBO_API_BASE_URL = KOBO_ENDPOINT  # alias, dipakai oleh kobo_api.py
@@ -120,8 +120,8 @@ KOBO_API_BASE_URL = KOBO_ENDPOINT  # alias, dipakai oleh kobo_api.py
 # Asset UID (Form UID) masing-masing form Kobo.
 # Setiap form punya UID unik yang bisa dilihat di URL form tersebut
 # di dashboard KoboToolbox (kf.kobotoolbox.org/#/forms/<UID>/...).
-FORM_UID_REGISTRASI = "aYYswzi3Xhmjy8LKSieoeR"  # Form UID khusus Registrasi
-FORM_UID_LOGIN = ""  # TODO: isi dengan Form UID khusus Login/Absensi Anda
+FORM_UID_REGISTRASI = "aRVadKAkpz2PYMaZH2gXKU"  # Form UID khusus Registrasi
+FORM_UID_LOGIN = "aE3xS8zXQsU9KQsiT9T7PA"  # TODO: isi dengan Form UID khusus Login/Absensi Anda
 
 KOBO_REQUEST_TIMEOUT = 30  # detik
 
