@@ -312,6 +312,10 @@ def find_duplicate_pairs_register(
                 "tanggal_lahir_b": rec_b.get("tanggal_lahir"),
                 "nama_kepala_keluarga_a": rec_a.get("nama_kepala_keluarga"),
                 "nama_kepala_keluarga_b": rec_b.get("nama_kepala_keluarga"),
+                "judul_kegiatan_a": rec_a.get("judul_kegiatan"),
+                "judul_kegiatan_b": rec_b.get("judul_kegiatan"),
+                "tanggal_kegiatan_a": rec_a.get("tanggal_kegiatan"),
+                "tanggal_kegiatan_b": rec_b.get("tanggal_kegiatan"),
                 "timestamp_submit_a": rec_a.get("timestamp_submit"),
                 "timestamp_submit_b": rec_b.get("timestamp_submit"),
                 **scores,
@@ -325,41 +329,85 @@ def find_duplicate_pairs_register(
     return df_result
 
 
+def check_person_logged_in_for_event(
+    person_record: dict,
+    df_login: pd.DataFrame,
+    threshold: float = config.DUPLICATE_THRESHOLD,
+) -> bool:
+    """
+    Mengecek apakah `person_record` (biasanya berasal dari baris Register)
+    SUDAH memiliki entri di dataset Login UNTUK KEGIATAN YANG SAMA
+    (judul_kegiatan sama persis, dinormalisasi).
+
+    Ini adalah versi "event-aware" dari pengecekan sudah-login-atau-belum —
+    dipakai untuk mengimplementasikan langkah flowchart:
+    "cek apakah di absensi datanya ada dengan acara terbaru?"
+
+    Seseorang yang sudah login di Event 1 TIDAK otomatis dianggap sudah login
+    di Event 3 — harus dicek per acara.
+
+    Parameters
+    ----------
+    person_record : dict
+        Baris data (biasanya dari Register) yang ingin dicek, harus punya
+        'judul_kegiatan' dan field REQUIRED_MATCH_COLUMNS.
+    df_login : pd.DataFrame
+        Dataset Login untuk dibandingkan.
+    threshold : float
+        Ambang batas skor kemiripan.
+
+    Returns
+    -------
+    bool
+        True jika ditemukan baris Login dengan judul_kegiatan sama DAN
+        skor kemiripan orang >= threshold. False jika tidak ditemukan.
+    """
+    if df_login.empty:
+        return False
+
+    target_event = _clean_text(person_record.get("judul_kegiatan"))
+    if target_event == "":
+        # Tidak ada info kegiatan -> tidak bisa dipastikan, anggap belum login
+        # (lebih aman: lebih baik ditawarkan untuk di-append daripada data hilang)
+        return False
+
+    for login_row in df_login.to_dict("records"):
+        if _clean_text(login_row.get("judul_kegiatan")) != target_event:
+            continue  # beda kegiatan, skip (bukan pembanding yang valid)
+        scores = compute_pair_score(person_record, login_row)
+        if scores["final_score"] >= threshold:
+            return True
+
+    return False
+
+
 def find_registered_not_logged_in(
     df_login: pd.DataFrame,
     df_register: pd.DataFrame,
     threshold: float = config.DUPLICATE_THRESHOLD,
 ) -> pd.DataFrame:
     """
-    Mencari peserta yang sudah mengisi Register tetapi belum Login,
-    menggunakan fuzzy match yang sama (bukan exact match) supaya typo
-    nama/DOB tidak menyebabkan false negative (dianggap belum login padahal sudah).
+    Mencari peserta yang sudah mengisi Register tetapi belum Login
+    UNTUK KEGIATAN YANG SAMA (event-aware — lihat check_person_logged_in_for_event).
 
-    Logika: sebuah baris Register dianggap "sudah login" jika ada minimal satu
-    baris Login dengan final_score >= threshold terhadap baris tersebut.
+    PENTING: seseorang yang sudah login di kegiatan lain TIDAK dianggap sudah
+    login di kegiatan saat ini. Setiap baris Register dicek terhadap Login
+    dengan judul_kegiatan yang sama persis, bukan lintas semua kegiatan.
 
     Returns
     -------
     pd.DataFrame
-        Subset df_register yang belum memiliki pasangan di df_login.
+        Subset df_register yang belum memiliki pasangan Login untuk
+        kegiatan yang sama.
     """
     if df_register.empty:
         return df_register.copy()
     if df_login.empty:
         return df_register.copy()
 
-    login_records = df_login.to_dict("records")
     not_logged_in_rows = []
-
-    for _, reg_row in df_register.iterrows():
-        reg_dict = reg_row.to_dict()
-        matched = False
-        for login_rec in login_records:
-            scores = compute_pair_score(reg_dict, login_rec)
-            if scores["final_score"] >= threshold:
-                matched = True
-                break
-        if not matched:
+    for reg_dict in df_register.to_dict("records"):
+        if not check_person_logged_in_for_event(reg_dict, df_login, threshold):
             not_logged_in_rows.append(reg_dict)
 
     if not not_logged_in_rows:
