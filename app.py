@@ -22,6 +22,7 @@ from kobo_api import fetch_kobo_data, load_csv_fallback, KoboAPIError
 from matching import find_duplicate_pairs, find_duplicate_pairs_register, find_registered_not_logged_in
 from data_processor import (
     apply_review_decision,
+    resolve_register_duplicate,
     append_register_to_login,
     to_csv_bytes,
     to_excel_bytes,
@@ -47,6 +48,7 @@ def init_session_state():
         config.SS_REVIEW_DECISIONS_LOGIN: {},
         config.SS_REVIEW_DECISIONS_REGISTER: {},
         config.SS_APPENDED_IDS: set(),
+        "_last_register_decision_info": "",
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -265,6 +267,13 @@ def section_run_matching(threshold: float):
 # =========================================================
 # SECTION 3: INTERACTIVE REVIEWER
 # =========================================================
+def _clean(value) -> str:
+    """Normalisasi ringan string untuk perbandingan tampilan (bukan untuk scoring)."""
+    if pd.isna(value):
+        return ""
+    return str(value).strip().lower()
+
+
 def section_reviewer(dataset_key: str, dupes_state_key: str, decisions_state_key: str, dataset_df_state_key: str):
     """
     Reviewer generik untuk satu dataset (Login atau Register).
@@ -277,6 +286,9 @@ def section_reviewer(dataset_key: str, dupes_state_key: str, decisions_state_key
         Kunci session_state terkait dataset yang direview.
     """
     st.subheader(f"🕵️ Interactive Reviewer — Potensi Double Count ({dataset_key})")
+
+    if dataset_key == "Register" and st.session_state.get("_last_register_decision_info"):
+        st.info(st.session_state["_last_register_decision_info"])
 
     df_dupes = st.session_state[dupes_state_key]
     decisions = st.session_state[decisions_state_key]
@@ -298,6 +310,12 @@ def section_reviewer(dataset_key: str, dupes_state_key: str, decisions_state_key
                     f"**Skor Akhir: `{row['final_score']}%`** "
                     f"— Nama: `{row['score_nama']}%` | DOB: `{row['score_dob']}%` "
                     f"| Nama Kepala Keluarga: `{row['score_kepala_keluarga']}%`"
+                )
+                sama_acara = _clean(row.get('judul_kegiatan_a')) == _clean(row.get('judul_kegiatan_b'))
+                st.caption(
+                    f"🎪 Kegiatan A: **{row.get('judul_kegiatan_a', '-')}** &nbsp;|&nbsp; "
+                    f"🎪 Kegiatan B: **{row.get('judul_kegiatan_b', '-')}** "
+                    f"({'✅ Acara sama' if sama_acara else 'ℹ️ Acara berbeda'})"
                 )
             else:
                 st.markdown(
@@ -336,17 +354,30 @@ def section_reviewer(dataset_key: str, dupes_state_key: str, decisions_state_key
             btn_col1, btn_col2, btn_col3 = st.columns(3)
             pair_id = row["pair_id"]
 
-            if btn_col1.button("✅ Simpan A & Hapus B", key=f"keep_a_{dataset_key}_{pair_id}"):
-                _apply_decision(row, "keep_a", decisions_state_key, dataset_df_state_key)
-                st.rerun()
+            if is_register:
+                if btn_col1.button("✅ Simpan A & Hapus B", key=f"keep_a_{dataset_key}_{pair_id}"):
+                    _apply_decision_register(row, "keep_a", decisions_state_key)
+                    st.rerun()
 
-            if btn_col2.button("✅ Simpan B & Hapus A", key=f"keep_b_{dataset_key}_{pair_id}"):
-                _apply_decision(row, "keep_b", decisions_state_key, dataset_df_state_key)
-                st.rerun()
+                if btn_col2.button("✅ Simpan B & Hapus A", key=f"keep_b_{dataset_key}_{pair_id}"):
+                    _apply_decision_register(row, "keep_b", decisions_state_key)
+                    st.rerun()
 
-            if btn_col3.button("↔️ Keep Keduanya", key=f"keep_both_{dataset_key}_{pair_id}"):
-                _apply_decision(row, "keep_both", decisions_state_key, dataset_df_state_key)
-                st.rerun()
+                if btn_col3.button("↔️ Keep Keduanya (Beda Orang)", key=f"keep_both_{dataset_key}_{pair_id}"):
+                    _apply_decision_register(row, "keep_both", decisions_state_key)
+                    st.rerun()
+            else:
+                if btn_col1.button("✅ Simpan A & Hapus B", key=f"keep_a_{dataset_key}_{pair_id}"):
+                    _apply_decision(row, "keep_a", decisions_state_key, dataset_df_state_key)
+                    st.rerun()
+
+                if btn_col2.button("✅ Simpan B & Hapus A", key=f"keep_b_{dataset_key}_{pair_id}"):
+                    _apply_decision(row, "keep_b", decisions_state_key, dataset_df_state_key)
+                    st.rerun()
+
+                if btn_col3.button("↔️ Keep Keduanya", key=f"keep_both_{dataset_key}_{pair_id}"):
+                    _apply_decision(row, "keep_both", decisions_state_key, dataset_df_state_key)
+                    st.rerun()
 
 
 def _apply_decision(row: pd.Series, decision: str, decisions_state_key: str, dataset_df_state_key: str):
@@ -361,6 +392,33 @@ def _apply_decision(row: pd.Series, decision: str, decisions_state_key: str, dat
 
         label_map = {"keep_a": "Simpan A & Hapus B", "keep_b": "Simpan B & Hapus A", "keep_both": "Keep Keduanya"}
         st.toast(f"Keputusan '{label_map[decision]}' diterapkan untuk pasangan {row['pair_id']}.", icon="✅")
+    except Exception as e:
+        st.error(f"Gagal menerapkan keputusan: {e}")
+
+
+def _apply_decision_register(row: pd.Series, decision: str, decisions_state_key: str):
+    """
+    Handler khusus dataset REGISTER — menjalankan flowchart lengkap:
+      1. Terapkan keputusan (hapus salah satu duplikat, atau keep both jika beda orang).
+      2. Jika keep_a/keep_b: tentukan "acara terbaru" di antara pasangan.
+      3. Cek apakah acara terbaru itu sudah ada di Login.
+      4. Jika belum -> auto-append ke Login. Jika sudah -> tidak ada tindakan tambahan.
+    """
+    try:
+        df_login = st.session_state[config.SS_LOGIN_DF]
+        df_register = st.session_state[config.SS_REGISTER_DF]
+
+        new_login, new_register, info_message = resolve_register_duplicate(
+            df_login, df_register, row, decision
+        )
+
+        st.session_state[config.SS_LOGIN_DF] = new_login
+        st.session_state[config.SS_REGISTER_DF] = new_register
+        st.session_state[decisions_state_key][row["pair_id"]] = decision
+
+        label_map = {"keep_a": "Simpan A & Hapus B", "keep_b": "Simpan B & Hapus A", "keep_both": "Keep Keduanya"}
+        st.toast(f"Keputusan '{label_map[decision]}' diterapkan. {info_message}", icon="✅")
+        st.session_state["_last_register_decision_info"] = info_message
     except Exception as e:
         st.error(f"Gagal menerapkan keputusan: {e}")
 
