@@ -14,6 +14,8 @@ Jalankan dengan: streamlit run app.py
 
 from __future__ import annotations
 
+import re
+
 import streamlit as st
 import pandas as pd
 
@@ -48,16 +50,13 @@ def init_session_state():
         config.SS_REVIEW_DECISIONS_LOGIN: {},
         config.SS_REVIEW_DECISIONS_REGISTER: {},
         config.SS_APPENDED_IDS: set(),
+        config.SS_PROJECT_METADATA: {field: "" for field in config.PROJECT_METADATA_FIELDS},
+        config.SS_METADATA_APPLIED: False,
         "_last_register_decision_info": "",
     }
     for key, val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
-          
-    if config.SS_PROJECT_METADATA not in st.session_state:
-        st.session_state[config.SS_PROJECT_METADATA] = {field: "" for field in config.PROJECT_METADATA_FIELDS}
-    if config.SS_METADATA_APPLIED not in st.session_state:
-        st.session_state[config.SS_METADATA_APPLIED] = False
 
 
 init_session_state()
@@ -80,6 +79,7 @@ def sidebar_data_source():
             "Pilih Area Program (AP)",
             ap_options,
             key="selected_ap",
+            help="Memilih AP akan otomatis mengisi Asset UID Login & Register di bawah.",
         )
         if selected_ap != "(Manual)":
             st.session_state["default_uid_login"] = config.AP_ASSET_MAP[selected_ap]["login"]
@@ -87,10 +87,10 @@ def sidebar_data_source():
         else:
             st.session_state["default_uid_login"] = config.FORM_UID_LOGIN
             st.session_state["default_uid_register"] = config.FORM_UID_REGISTRASI
-          
+
         with st.sidebar.form("kobo_api_form"):
             st.caption(
-                "Kredensial & Form UID sudah terisi otomatis dari config.py. "
+                "Kredensial & Form UID sudah terisi otomatis dari config.py / pilihan AP di atas. "
                 "Ubah di sini jika perlu override sementara (tidak mengubah file config.py)."
             )
             api_token = st.text_input("API Token", value=config.KOBO_TOKEN, type="password")
@@ -523,10 +523,12 @@ def section_project_metadata():
         half = (len(fields) + 1) // 2
         for i, field in enumerate(fields):
             target_col = col1 if i < half else col2
+            help_text = "Format wajib: xx.xx.xx (contoh: 01.02.03)" if field == "Activity Code" else None
             values[field] = target_col.text_input(
                 field,
                 value=st.session_state[config.SS_PROJECT_METADATA].get(field, ""),
                 key=f"meta_{field}",
+                help=help_text,
             )
         submitted = st.form_submit_button("✅ Terapkan ke Seluruh Dataset")
 
@@ -534,6 +536,15 @@ def section_project_metadata():
         empty_fields = [f for f, v in values.items() if not v.strip()]
         if empty_fields:
             st.warning(f"Field berikut masih kosong: {', '.join(empty_fields)}. Tetap dilanjutkan.")
+
+        # Validasi format Activity Code harus xx.xx.xx (x = digit)
+        activity_code = values.get("Activity Code", "").strip()
+        if activity_code and not re.match(r"^\d{2}\.\d{2}\.\d{2}$", activity_code):
+            st.error(
+                f"Format 'Activity Code' salah: '{activity_code}'. "
+                "Harus mengikuti format xx.xx.xx (contoh: 01.02.03)."
+            )
+            st.stop()
 
         st.session_state[config.SS_PROJECT_METADATA] = values
 
@@ -554,7 +565,31 @@ def section_project_metadata():
         preview_cols = [c for c in config.PROJECT_METADATA_FIELDS if c in df_login.columns]
         if preview_cols and not df_login.empty:
             st.dataframe(df_login[preview_cols].head(5), use_container_width=True, hide_index=True)
-  
+
+
+def _extract_output_code(activity_code: str) -> str:
+    """
+    Ambil bagian xx.xx dari format xx.xx.xx pada Activity Code.
+    Contoh: '01.02.03' -> '01.02'
+    """
+    match = re.match(r"^(\d{2}\.\d{2})\.\d{2}$", activity_code.strip())
+    return match.group(1) if match else ""
+
+
+def build_btt_sheet(df_login: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sheet BTT = data peserta Login + metadata project yang sudah diisi panitia,
+    ditambah kolom 'Output Code' hasil generate otomatis dari Activity Code.
+    """
+    if df_login.empty:
+        return df_login.copy()
+
+    df_btt = df_login.copy()
+    activity_code_val = st.session_state[config.SS_PROJECT_METADATA].get("Activity Code", "")
+    df_btt["Output Code"] = _extract_output_code(activity_code_val)
+    return df_btt
+
+
 # =========================================================
 # SECTION 5: EXPORT / DATABASE CONSTRAINT
 # =========================================================
@@ -580,6 +615,13 @@ def section_export():
         f"**{appended}** peserta register telah di-append ke login."
     )
 
+    activity_code_check = st.session_state[config.SS_PROJECT_METADATA].get("Activity Code", "").strip()
+    if not activity_code_check or not re.match(r"^\d{2}\.\d{2}\.\d{2}$", activity_code_check):
+        st.warning(
+            "⚠️ 'Activity Code' belum diisi dengan format yang benar (xx.xx.xx) di tab Metadata Project. "
+            "Kolom 'Output Code' pada sheet BTT akan kosong."
+        )
+
     col1, col2 = st.columns(2)
     with col1:
         st.download_button(
@@ -599,9 +641,10 @@ def section_export():
         )
 
     try:
-        excel_bytes = to_excel_bytes({"Login": df_login, "Register": df_register})
+        df_btt = build_btt_sheet(df_login)
+        excel_bytes = to_excel_bytes({"Login": df_login, "Register": df_register, "BTT": df_btt})
         st.download_button(
-            "⬇️ Export Gabungan (Excel, multi-sheet)",
+            "⬇️ Export Gabungan (Excel, multi-sheet: Login, Register, BTT)",
             data=excel_bytes,
             file_name="dataset_kehadiran_clean.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
