@@ -53,6 +53,11 @@ def init_session_state():
     for key, val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
+          
+    if config.SS_PROJECT_METADATA not in st.session_state:
+        st.session_state[config.SS_PROJECT_METADATA] = {field: "" for field in config.PROJECT_METADATA_FIELDS}
+    if config.SS_METADATA_APPLIED not in st.session_state:
+        st.session_state[config.SS_METADATA_APPLIED] = False
 
 
 init_session_state()
@@ -495,6 +500,62 @@ def section_auto_append():
 
 
 # =========================================================
+# SECTION 4b: METADATA PROJECT (DUPLICATE KE SELURUH BARIS)
+# =========================================================
+def section_project_metadata():
+    st.subheader("🏷️ Metadata Project")
+    st.caption(
+        "Isi informasi berikut satu kali. Nilainya akan diterapkan (duplicate) ke "
+        "**seluruh baris** dataset Login dan Register sebagai kolom tambahan."
+    )
+
+    df_login = st.session_state[config.SS_LOGIN_DF]
+    df_register = st.session_state[config.SS_REGISTER_DF]
+
+    if df_login.empty and df_register.empty:
+        st.info("Belum ada data Login/Register yang dimuat.")
+        return
+
+    with st.form("project_metadata_form"):
+        values = {}
+        col1, col2 = st.columns(2)
+        fields = config.PROJECT_METADATA_FIELDS
+        half = (len(fields) + 1) // 2
+        for i, field in enumerate(fields):
+            target_col = col1 if i < half else col2
+            values[field] = target_col.text_input(
+                field,
+                value=st.session_state[config.SS_PROJECT_METADATA].get(field, ""),
+                key=f"meta_{field}",
+            )
+        submitted = st.form_submit_button("✅ Terapkan ke Seluruh Dataset")
+
+    if submitted:
+        empty_fields = [f for f, v in values.items() if not v.strip()]
+        if empty_fields:
+            st.warning(f"Field berikut masih kosong: {', '.join(empty_fields)}. Tetap dilanjutkan.")
+
+        st.session_state[config.SS_PROJECT_METADATA] = values
+
+        for field, value in values.items():
+            if not df_login.empty:
+                df_login[field] = value
+            if not df_register.empty:
+                df_register[field] = value
+
+        st.session_state[config.SS_LOGIN_DF] = df_login
+        st.session_state[config.SS_REGISTER_DF] = df_register
+        st.session_state[config.SS_METADATA_APPLIED] = True
+        st.success("Metadata berhasil diterapkan ke seluruh baris dataset Login & Register.")
+        st.rerun()
+
+    if st.session_state[config.SS_METADATA_APPLIED]:
+        st.caption("📋 Preview kolom metadata pada dataset:")
+        preview_cols = [c for c in config.PROJECT_METADATA_FIELDS if c in df_login.columns]
+        if preview_cols and not df_login.empty:
+            st.dataframe(df_login[preview_cols].head(5), use_container_width=True, hide_index=True)
+  
+# =========================================================
 # SECTION 5: EXPORT / DATABASE CONSTRAINT
 # =========================================================
 def section_export():
@@ -567,8 +628,8 @@ def main():
     section_run_matching(threshold)
     st.divider()
 
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["🕵️ Reviewer Login", "🕵️ Reviewer Register", "➕ Auto-Append Login", "💾 Export"]
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["🕵️ Reviewer Login", "🕵️ Reviewer Register", "➕ Auto-Append Login", "🏷️ Metadata Project", "💾 Export"]
     )
     with tab1:
         section_reviewer(
@@ -587,6 +648,8 @@ def main():
     with tab3:
         section_auto_append()
     with tab4:
+        section_project_metadata()
+    with tab5:
         section_export()
 
 
