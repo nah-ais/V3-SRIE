@@ -126,6 +126,22 @@ FORM_UID_LOGIN = "aE3xS8zXQsU9KQsiT9T7PA"  # TODO: isi dengan Form UID khusus Lo
 KOBO_REQUEST_TIMEOUT = 30  # detik
 
 # =========================================================
+# 4b. MAPPING AREA PROGRAM (AP) -> ASSET UID (LOGIN & REGISTER)
+# =========================================================
+# Tambahkan/ubah daftar AP di sini. Panitia tinggal pilih dari dropdown
+# di sidebar, lalu Asset UID Login & Register akan terisi otomatis.
+AP_ASSET_MAP = {
+    "AP-Surabaya": {
+        "login": "ISI_ASSET_UID_LOGIN_SURABAYA",
+        "register": "ISI_ASSET_UID_REGISTER_SURABAYA",
+    },
+    "AP-Kalimantan Barat": {
+        "login": "ISI_ASSET_UID_LOGIN_KALBAR",
+        "register": "ISI_ASSET_UID_REGISTER_KALBAR",
+    },
+}
+
+# =========================================================
 # 5. SESSION STATE KEYS (biar konsisten, hindari typo string literal)
 # =========================================================
 SS_LOGIN_DF = "df_login"
