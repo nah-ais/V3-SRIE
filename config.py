@@ -152,3 +152,22 @@ SS_REVIEW_DECISIONS_LOGIN = "review_decisions_login"     # dict: pair_id -> kepu
 SS_REVIEW_DECISIONS_REGISTER = "review_decisions_register"  # dict: pair_id -> keputusan (dataset Register)
 SS_NOT_LOGIN_YET = "df_not_login_yet"
 SS_APPENDED_IDS = "appended_ids"             # id_kobo dari register yang sudah di-append ke login
+
+# =========================================================
+# 6. METADATA PROJECT (INPUT MANUAL PANITIA -> DUPLICATE KE SEMUA BARIS)
+# =========================================================
+# Field-field ini diketik SEKALI oleh panitia di UI, lalu nilainya
+# di-duplicate ke seluruh baris dataset Login & Register sebelum export.
+PROJECT_METADATA_FIELDS = [
+    "Implementor",
+    "Sector",
+    "CPM",
+    "Project",
+    "Project Category",
+    "Activity Code",
+    "Activity",
+    "Activity Detail",
+]
+
+SS_PROJECT_METADATA = "project_metadata"  # dict: field -> value yang diisi panitia
+SS_METADATA_APPLIED = "project_metadata_applied"  # bool: sudah diterapkan ke dataset atau belum
