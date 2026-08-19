@@ -506,7 +506,8 @@ def section_project_metadata():
     st.subheader("🏷️ Metadata Project")
     st.caption(
         "Isi informasi berikut satu kali. Nilainya akan diterapkan (duplicate) ke "
-        "**seluruh baris** dataset Login dan Register sebagai kolom tambahan."
+        "**seluruh baris pada sheet BTT saat export** — mengikuti jumlah baris dataset Login. "
+        "Sheet Login dan Register TIDAK berubah."
     )
 
     df_login = st.session_state[config.SS_LOGIN_DF]
@@ -530,7 +531,7 @@ def section_project_metadata():
                 key=f"meta_{field}",
                 help=help_text,
             )
-        submitted = st.form_submit_button("✅ Terapkan ke Seluruh Dataset")
+        submitted = st.form_submit_button("✅ Simpan Metadata (untuk Sheet BTT)")
 
     if submitted:
         empty_fields = [f for f, v in values.items() if not v.strip()]
@@ -546,25 +547,19 @@ def section_project_metadata():
             )
             st.stop()
 
+        # Metadata HANYA disimpan di session state, TIDAK ditempel ke df_login/df_register.
+        # Nilainya baru diterapkan saat sheet BTT dibangun di section_export().
         st.session_state[config.SS_PROJECT_METADATA] = values
-
-        for field, value in values.items():
-            if not df_login.empty:
-                df_login[field] = value
-            if not df_register.empty:
-                df_register[field] = value
-
-        st.session_state[config.SS_LOGIN_DF] = df_login
-        st.session_state[config.SS_REGISTER_DF] = df_register
         st.session_state[config.SS_METADATA_APPLIED] = True
-        st.success("Metadata berhasil diterapkan ke seluruh baris dataset Login & Register.")
+        st.success("Metadata berhasil disimpan. Akan diterapkan ke sheet BTT saat export.")
         st.rerun()
 
     if st.session_state[config.SS_METADATA_APPLIED]:
-        st.caption("📋 Preview kolom metadata pada dataset:")
-        preview_cols = [c for c in config.PROJECT_METADATA_FIELDS if c in df_login.columns]
-        if preview_cols and not df_login.empty:
-            st.dataframe(df_login[preview_cols].head(5), use_container_width=True, hide_index=True)
+        st.caption("📋 Preview metadata yang akan diterapkan ke sheet BTT:")
+        preview_df = pd.DataFrame(
+            [st.session_state[config.SS_PROJECT_METADATA]]
+        )
+        st.dataframe(preview_df, use_container_width=True, hide_index=True)
 
 
 def _extract_output_code(activity_code: str) -> str:
@@ -578,14 +573,23 @@ def _extract_output_code(activity_code: str) -> str:
 
 def build_btt_sheet(df_login: pd.DataFrame) -> pd.DataFrame:
     """
-    Sheet BTT = data peserta Login + metadata project yang sudah diisi panitia,
-    ditambah kolom 'Output Code' hasil generate otomatis dari Activity Code.
+    Sheet BTT = data peserta Login (jumlah baris mengikuti df_login) + metadata
+    project yang diisi panitia (di-duplicate ke seluruh baris), ditambah kolom
+    'Output Code' hasil generate otomatis dari Activity Code.
+
+    df_login dan df_register di session state TIDAK diubah oleh fungsi ini —
+    metadata hanya ditempel pada salinan (copy) khusus untuk sheet BTT.
     """
     if df_login.empty:
         return df_login.copy()
 
     df_btt = df_login.copy()
-    activity_code_val = st.session_state[config.SS_PROJECT_METADATA].get("Activity Code", "")
+
+    metadata = st.session_state[config.SS_PROJECT_METADATA]
+    for field in config.PROJECT_METADATA_FIELDS:
+        df_btt[field] = metadata.get(field, "")
+
+    activity_code_val = metadata.get("Activity Code", "")
     df_btt["Output Code"] = _extract_output_code(activity_code_val)
     return df_btt
 
