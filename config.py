@@ -170,4 +170,4 @@ PROJECT_METADATA_FIELDS = [
 ]
 
 SS_PROJECT_METADATA = "project_metadata"  # dict: field -> value yang diisi panitia
-SS_METADATA_APPLIED = "project_metadata_applied"  # bool: sudah diterapkan ke dataset atau belu
+SS_METADATA_APPLIED = "project_metadata_applied"  # bool: sudah diterapkan ke dataset atau belum
