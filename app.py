@@ -70,6 +70,19 @@ def sidebar_data_source():
     )
 
     if mode == "KoboToolbox API":
+        ap_options = ["(Manual)"] + list(config.AP_ASSET_MAP.keys())
+        selected_ap = st.sidebar.selectbox(
+            "Pilih Area Program (AP)",
+            ap_options,
+            key="selected_ap",
+        )
+        if selected_ap != "(Manual)":
+            st.session_state["default_uid_login"] = config.AP_ASSET_MAP[selected_ap]["login"]
+            st.session_state["default_uid_register"] = config.AP_ASSET_MAP[selected_ap]["register"]
+        else:
+            st.session_state["default_uid_login"] = config.FORM_UID_LOGIN
+            st.session_state["default_uid_register"] = config.FORM_UID_REGISTRASI
+          
         with st.sidebar.form("kobo_api_form"):
             st.caption(
                 "Kredensial & Form UID sudah terisi otomatis dari config.py. "
@@ -79,13 +92,13 @@ def sidebar_data_source():
             base_url = st.text_input("Base URL", value=config.KOBO_ENDPOINT)
             asset_uid_login = st.text_input(
                 "Asset UID (Form UID) - Form Login",
-                value=config.FORM_UID_LOGIN,
-                help="Dari config.py: FORM_UID_LOGIN",
+                value=st.session_state.get("default_uid_login", config.FORM_UID_LOGIN),
+                help="Otomatis terisi dari pilihan AP di atas, atau bisa diedit manual.",
             )
             asset_uid_register = st.text_input(
                 "Asset UID (Form UID) - Form Register",
-                value=config.FORM_UID_REGISTRASI,
-                help="Dari config.py: FORM_UID_REGISTRASI",
+                value=st.session_state.get("default_uid_register", config.FORM_UID_REGISTRASI),
+                help="Otomatis terisi dari pilihan AP di atas, atau bisa diedit manual.",
             )
             submitted = st.form_submit_button("🔄 Tarik Data dari Kobo")
 
